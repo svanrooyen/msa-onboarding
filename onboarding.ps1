@@ -113,6 +113,7 @@ Import-Module Microsoft.Graph.Authentication
 Import-Module Microsoft.Graph.Users
 Import-Module Microsoft.Graph.Groups
 Import-Module Microsoft.Graph.Identity.DirectoryManagement
+Import-Module Microsoft.Graph.Teams
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -206,6 +207,76 @@ $Script:Config = [ordered]@{
     'Assistant Teacher'  = 'ROLE_ASSISTANT_TEACHER'
     'Personal Assistant' = 'ROLE_PERSONAL_ASSISTANT'
   }
+
+  # Teams Chat Group Mapping (keyed by campus from CSV, NOT Entra City field)
+  # Each campus has up to 3 chats: KeyMessages, StudentSupport (all staff), SupportWorkerChat (Support Workers only)
+  # Cross-campus chats are listed separately
+  TeamsChatMap = @{
+    beenleigh = @{
+      KeyMessages        = '19:322e7c475eb541eaae21328de4fe474e@thread.v2'
+      StudentSupport     = '19:dcb8b3ba4cf64688bbfca7036a7be9b4@thread.v2'
+      SupportWorkerChat  = '19:cbc55fd2a693451aabd91032c900e8a4@thread.v2'
+    }
+    bundoora = @{
+      KeyMessages        = '19:013ee319d4c144438d2aed527da5c1e7@thread.v2'
+      StudentSupport     = '19:0decbc87714043eeaa1d852cb387d437@thread.v2'
+      SupportWorkerChat  = '19:ed7bb3c6437545c5a1500a3e927accab@thread.v2'
+    }
+    cairns = @{
+      KeyMessages        = '19:687e612cbe5e446b8d60c37bf0e795d8@thread.v2'
+      StudentSupport     = '19:fdada149eea54196aea7f714171304f9@thread.v2'
+      SupportWorkerChat  = '19:5223e1ded38548d28f164f2d4b09fb55@thread.v2'
+    }
+    coolangatta = @{
+      KeyMessages        = '19:ee68afa24bc647e19d60bcdb61eeaf41@thread.v2'
+      StudentSupport     = '19:5cfc5748aebb4ac7aab4c52759603cd9@thread.v2'
+      SupportWorkerChat  = '19:f993f08ef3494c00b80d01b06980aba2@thread.v2'
+    }
+    launceston = @{
+      KeyMessages        = '19:84b7e7d7105b4381ae4179eb3ec7aacd@thread.v2'
+      StudentSupport     = '19:6d2ccc3982e049d8b9051ec2fb1b957c@thread.v2'
+      SupportWorkerChat  = '19:2a03802a944948dc8e3a1b1b7af5f7ba@thread.v2'
+    }
+    mitchelton = @{
+      KeyMessages        = '19:2446451eea024d66b68732169877322d@thread.v2'
+      StudentSupport     = '19:256e46dde1114c929ca705027e100eeb@thread.v2'
+      SupportWorkerChat  = '19:7608cee226104a2e88692f5facf694d7@thread.v2'
+    }
+    olympicpark = @{
+      KeyMessages        = '19:a02a7e0a3f1644c3ad3a3a720f6735cc@thread.v2'
+      StudentSupport     = '19:2f55d3a950ce4f3ebc0561076148ee0e@thread.v2'
+      SupportWorkerChat  = '19:5025aeef392442fea9cd2da6d666933c@thread.v2'
+    }
+    southport = @{
+      KeyMessages        = '19:6f3abb8c849e4561abbf5874c5c9cb1e@thread.v2'
+      StudentSupport     = '19:5bbe7ef24d2d41fc9ec7a0e96816d7c4@thread.v2'
+      SupportWorkerChat  = '19:dc452b5659a64440a17ebbfa97294b66@thread.v2'
+    }
+    springfield = @{
+      KeyMessages        = '19:55b17e7c8a9e44728bb9e3d879319a38@thread.v2'
+      StudentSupport     = '19:6daef91d38894daf84b2a1205d2e5d58@thread.v2'
+      SupportWorkerChat  = '19:6cf4d4910f97404594e0fd817d38debc@thread.v2'
+    }
+    varsity = @{
+      KeyMessages        = '19:c69262d84a534cc3b72ea1bc678d9795@thread.v2'
+      StudentSupport     = '19:4dcb5a2564c344e086725c693db9ef27@thread.v2'
+      SupportWorkerChat  = '19:b18bf8a872d74b4aba96e0d2c587e4d7@thread.v2'
+    }
+    # Test campus - uses a single chat for all rules (personal tenant testing)
+    test = @{
+      KeyMessages        = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'
+      StudentSupport     = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'
+      SupportWorkerChat  = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'
+    }
+  }
+
+  # Cross-campus Teams chat groups
+  TeamsChatCrossCampus = @{
+    SupportWorkers = '19:cross-campus-support-workers-thread-id@thread.v2'  # TODO: get actual thread ID from MSA
+  }
+
+  # Job titles that qualify for Support Worker chat groups
+  SupportWorkerTitles = @('Support Worker')
 
   # Campus defaults (replaces portal templates)
   CampusDefaults = @{
@@ -368,7 +439,8 @@ function Connect-MsaGraph {
   $scopes = @(
     'User.ReadWrite.All',
     'Group.ReadWrite.All',
-    'Directory.ReadWrite.All'
+    'Directory.ReadWrite.All',
+    'Chat.ReadWrite.All'
   )
 
   Connect-MgGraph -Scopes $scopes | Out-Null
@@ -561,6 +633,79 @@ function Add-UserToGroupIfConfigured {
   }
 }
 
+function Add-UserToChatIfMissing {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ChatId,
+    [Parameter(Mandatory)][string]$UserId,
+    [Parameter(Mandatory)][string]$DisplayName,
+    [string]$ChatLabel = ''
+  )
+
+  try {
+    $members = Get-MgChatMember -ChatId $ChatId
+    $memberIds = $members | ForEach-Object { $_.AdditionalProperties["userId"] }
+
+    if ($memberIds -contains $UserId) {
+      Write-Host "    $DisplayName already in chat: $ChatLabel" -ForegroundColor DarkGray
+      return
+    }
+
+    $params = @{
+      "@odata.type"     = "#microsoft.graph.aadUserConversationMember"
+      roles             = @("owner")
+      "user@odata.bind" = "https://graph.microsoft.com/v1.0/users/$UserId"
+    }
+
+    New-MgChatMember -ChatId $ChatId -BodyParameter $params | Out-Null
+    Write-Host "    Added to chat: $ChatLabel" -ForegroundColor DarkGray
+  } catch {
+    Write-Warning "Teams chat add failed ($ChatLabel): $($_.Exception.Message)"
+  }
+}
+
+function Add-UserToTeamsChats {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$UserId,
+    [Parameter(Mandatory)][string]$DisplayName,
+    [Parameter(Mandatory)][string]$CampusKey,
+    [Parameter(Mandatory)][string]$JobTitle
+  )
+
+  $isSupportWorker = $JobTitle -in $Script:Config.SupportWorkerTitles
+
+  # Campus chats (keyed by campus from CSV, not Entra City field)
+  if ($Script:Config.TeamsChatMap.ContainsKey($CampusKey)) {
+    $campusChats = $Script:Config.TeamsChatMap[$CampusKey]
+
+    # Key Messages - all staff
+    if ($campusChats.KeyMessages) {
+      Add-UserToChatIfMissing -ChatId $campusChats.KeyMessages -UserId $UserId -DisplayName $DisplayName -ChatLabel "$CampusKey Key Messages"
+    }
+
+    # Student Support - all staff
+    if ($campusChats.StudentSupport) {
+      Add-UserToChatIfMissing -ChatId $campusChats.StudentSupport -UserId $UserId -DisplayName $DisplayName -ChatLabel "$CampusKey Student Support"
+    }
+
+    # Support Worker Chat - Support Workers only
+    if ($isSupportWorker -and $campusChats.SupportWorkerChat) {
+      Add-UserToChatIfMissing -ChatId $campusChats.SupportWorkerChat -UserId $UserId -DisplayName $DisplayName -ChatLabel "$CampusKey Support Worker Chat"
+    }
+  } else {
+    Write-Warning "No Teams chat mapping found for campus '$CampusKey'. Skipping chat group additions."
+  }
+
+  # Cross-campus: Support Workers group
+  if ($isSupportWorker) {
+    $crossCampusId = $Script:Config.TeamsChatCrossCampus.SupportWorkers
+    if ($crossCampusId -and $crossCampusId -notlike '*TODO*') {
+      Add-UserToChatIfMissing -ChatId $crossCampusId -UserId $UserId -DisplayName $DisplayName -ChatLabel "Support Workers (cross-campus)"
+    }
+  }
+}
+
 function Get-ClosestCampusKey {
   param([string]$InputKey)
 
@@ -730,6 +875,11 @@ function Invoke-MsaEntraOnboardingFromCsv {
           Add-UserToGroupIfConfigured -UserId $user.Id -GroupId $Script:Config.Groups[$roleKey]
         }
       }
+
+      # Add to Teams chat groups (fire-and-forget for new users)
+      $campusKey = $campus.Trim().ToLower()
+      Write-Host "  Adding to Teams chat groups..." -ForegroundColor DarkGray
+      Add-UserToTeamsChats -UserId $user.Id -DisplayName $displayName -CampusKey $campusKey -JobTitle $jobTitle
 
       # Generate onboarding email HTML file for manual send
       $emailDir = $Script:Config.OnboardingEmailOutputDir

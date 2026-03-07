@@ -1,6 +1,6 @@
 Topic,Id,Rule
-Beenleigh Key Messages,19:322e7c475eb541eaae21328de4fe474e@thread.v2,"IF ""(CITY -eq Beenleigh)"""
-Beenleigh Student Support,19:dcb8b3ba4cf64688bbfca7036a7be9b4@thread.v2,"IF ""(CITY -eq Beenleigh)"""
+Beenleigh Key Messages,19:322e7c475eb541eaae21328de4fe474e@thread.v2,"IF ""(City -eq Beenleigh)"""
+Beenleigh Student Support,19:dcb8b3ba4cf64688bbfca7036a7be9b4@thread.v2,"IF ""(City -eq Beenleigh)"""
 Beenleigh Support Worker Chat,19:cbc55fd2a693451aabd91032c900e8a4@thread.v2,"IF ""(City -eq Beenleigh)"" AND ""(Title -eq Support Worker)"""
 Bundoora Key Messages,19:013ee319d4c144438d2aed527da5c1e7@thread.v2,
 Bundoora Student Support,19:0decbc87714043eeaa1d852cb387d437@thread.v2,
@@ -30,4 +30,4 @@ Sydney Olympic Park Support Worker Chat,19:5025aeef392442fea9cd2da6d666933c@thre
 Varsity Key Messages,19:c69262d84a534cc3b72ea1bc678d9795@thread.v2,
 Varsity Student Support,19:4dcb5a2564c344e086725c693db9ef27@thread.v2,
 Varsity Support Worker Chat,19:b18bf8a872d74b4aba96e0d2c587e4d7@thread.v2,
-Support Workers,19:d8d84084e7fc4eea9326d88a2cc8a831@thread.v2,
+Support Workers,Title,"IF ""(Title -eq Support Worker)"
