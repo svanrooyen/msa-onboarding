@@ -773,6 +773,11 @@ function Invoke-MsaEntraOnboardingFromCsv {
 
   $licenceFailures = New-Object System.Collections.Generic.List[object]
 
+  # Collect users for Phase 2 (Teams chat additions after all creations)
+  $chatQueue = New-Object System.Collections.Generic.List[object]
+  $newUsersCreated = $false
+
+  # ===== PHASE 1: User creation, licence, groups, email =====
   foreach ($r in $rows) {
     $campus  = $r.Campus
     $jobTitle = $r.'Job Title'
@@ -794,10 +799,13 @@ function Invoke-MsaEntraOnboardingFromCsv {
       if ($existing) {
         Write-Host "SkipExisting: user already exists: $displayName ($($existing.UserPrincipalName))" -ForegroundColor Yellow
 
-        # Still ensure Teams chat membership for existing users
-        $campusKey = $campus.Trim().ToLower()
-        Write-Host "  Checking Teams chat group membership..." -ForegroundColor DarkGray
-        Add-UserToTeamsChats -UserId $existing.Id -DisplayName $displayName -CampusKey $campusKey -JobTitle $jobTitle
+        # Queue for Phase 2 chat check (no propagation delay needed)
+        $chatQueue.Add([pscustomobject]@{
+          UserId      = $existing.Id
+          DisplayName = $displayName
+          CampusKey   = $campus.Trim().ToLower()
+          JobTitle    = $jobTitle
+        })
 
         continue
       }
@@ -882,13 +890,14 @@ function Invoke-MsaEntraOnboardingFromCsv {
         }
       }
 
-      # Add to Teams chat groups (fire-and-forget for new users)
-      # Brief delay to allow Entra to propagate the new user to Teams
-      Write-Host "  Waiting for Entra propagation before Teams chat additions..." -ForegroundColor DarkGray
-      Start-Sleep -Seconds 10
-      $campusKey = $campus.Trim().ToLower()
-      Write-Host "  Adding to Teams chat groups..." -ForegroundColor DarkGray
-      Add-UserToTeamsChats -UserId $user.Id -DisplayName $displayName -CampusKey $campusKey -JobTitle $jobTitle
+      # Queue for Phase 2 chat additions
+      $chatQueue.Add([pscustomobject]@{
+        UserId      = $user.Id
+        DisplayName = $displayName
+        CampusKey   = $campusKey
+        JobTitle    = $jobTitle
+      })
+      $newUsersCreated = $true
 
       # Generate onboarding email HTML file for manual send
       $emailDir = $Script:Config.OnboardingEmailOutputDir
@@ -910,6 +919,24 @@ function Invoke-MsaEntraOnboardingFromCsv {
     }
   }
 
+  # ===== PHASE 2: Teams chat group additions =====
+  if ($chatQueue.Count -gt 0) {
+    if ($newUsersCreated) {
+      Write-Host ''
+      Write-Host "Waiting 15 seconds for Entra propagation before Teams chat additions..." -ForegroundColor Cyan
+      Start-Sleep -Seconds 15
+    }
+
+    Write-Host ''
+    Write-Host "===== TEAMS CHAT GROUP ADDITIONS =====" -ForegroundColor Cyan
+    foreach ($cu in $chatQueue) {
+      Write-Host "  Processing: $($cu.DisplayName)" -ForegroundColor Cyan
+      Add-UserToTeamsChats -UserId $cu.UserId -DisplayName $cu.DisplayName -CampusKey $cu.CampusKey -JobTitle $cu.JobTitle
+    }
+    Write-Host "=======================================" -ForegroundColor Cyan
+  }
+
+  Write-Host ''
   Write-Host "Email drafts saved to: $($Script:Config.OnboardingEmailOutputDir)" -ForegroundColor Green
 
   # Licence failure summary
