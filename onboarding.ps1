@@ -498,24 +498,33 @@ function Get-UniqueUpn {
   )
 
   $fn = (Normalise-NamePart $FirstName).ToLowerInvariant()
-  $sn = (Normalise-NamePart $Surname).ToLowerInvariant()
+
+  # For UPN surname: use first part of hyphenated names, strip apostrophes/special chars
+  $snRaw = $Surname.Trim()
+  if ($snRaw -match '-') {
+    $snRaw = ($snRaw -split '-')[0]
+  }
+  $sn = ($snRaw -replace "[^a-zA-Z0-9]", '').ToLowerInvariant()
 
   if ([string]::IsNullOrWhiteSpace($fn) -or [string]::IsNullOrWhiteSpace($sn)) {
     throw 'Cannot generate UPN: first name or surname missing.'
   }
 
-  $base = "$fn.$sn"
-  $upn  = "$base@$TenantDomain"
-
-  $i = 1
-  while ($true) {
+  # MSA naming convention: firstname.{progressive surname letters}
+  # e.g. steven.v -> steven.ve -> steven.vel -> steven.vell -> steven.vella
+  for ($i = 1; $i -le $sn.Length; $i++) {
+    $suffix = $sn.Substring(0, $i)
+    $upn = "$fn.$suffix@$TenantDomain"
     $existing = Get-MgUser -Filter "userPrincipalName eq '$upn'" -ErrorAction SilentlyContinue
-    if (-not $existing) { return $upn }
-
-    $i++
-    $upn = "$base$i@$TenantDomain"
-    if ($i -gt 50) { throw "Too many collisions generating UPN for $FirstName $Surname" }
+    if (-not $existing) {
+      Write-Host "  UPN available: $upn" -ForegroundColor DarkGray
+      return $upn
+    }
+    Write-Host "  UPN taken: $upn - trying next suffix" -ForegroundColor DarkGray
   }
+
+  # Safety valve: full surname exhausted, flag for manual intervention
+  throw "Could not generate unique UPN for $FirstName $Surname — all surname suffix combinations taken at domain $TenantDomain. Manual intervention required."
 }
 
 function Get-ExistingUserByUpnOrMail {
@@ -835,7 +844,7 @@ function New-MsaQldOnboardingEmailBody {
    Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement -Scope CurrentUser
    
 1) Dot-source to load functions into session:
-   . .\Msa-Entra-Onboarding.ps1
+   . .\onboarding.ps1
 
 2) Connect once per session:
    Connect-MsaGraph
