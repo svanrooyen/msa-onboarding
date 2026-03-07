@@ -16,6 +16,13 @@ FUTURE ROADMAP (Tracked Enhancements)
 The following items are intentionally NOT implemented yet, but planned.
 This section acts as a living backlog to prevent logic creep inside the core script.
 
+** NEXT) CC State-Based Recruitment Mailbox on Onboarding Emails
+   - Add the relevant recruitment shared mailbox to the CC field of onboarding emails.
+   - Recruitment mailbox is per-state (e.g. QLD, VIC, NSW, TAS each have their own).
+   - Add a RecruitmentMailboxByState config block mapping state -> email address.
+   - Apply to both HTML file output (as a note/header) and Outlook draft CC field.
+   - Work UPN is already CC'd; recruitment mailbox would be an additional CC.
+
 0) Personal Email Capture in Entra (Privacy Review Required)
    - Evaluate storing personal email in user.otherMails.
    - Confirm organisational stance on privacy and visibility.
