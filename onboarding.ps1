@@ -80,6 +80,19 @@ This section acts as a living backlog to prevent logic creep inside the core scr
    - Consider wrapping individual user creation in try/catch to prevent one bad row
      from killing the rest of the batch (similar to licence failure handling).
 
+9) Cross-Domain UPN Uniqueness (PRE-GO-LIVE CHECK)
+   - Confirm with Damon whether duplicate UPN prefixes across domains are acceptable
+     e.g. steven.v@msa.qld.edu.au AND steven.v@msa.nsw.edu.au.
+   - Entra allows this (full UPN is the unique key), but MailNickname must also be
+     unique — current script sets it from the UPN prefix, so cross-domain duplicates
+     would collide on MailNickname.
+   - Practical concerns: GAL/People Picker confusion, future domain consolidation risk.
+   - If cross-domain duplicates are allowed: update Get-UniqueUpn to check all MSA
+     domains (not just the target campus domain) and warn when a cross-domain match
+     exists. Also handle MailNickname uniqueness separately.
+   - If not allowed: update Get-UniqueUpn to check all domains and treat a match on
+     any domain as a collision requiring suffix expansion.
+
 Design Principle:
 Keep core onboarding deterministic and minimal.
 Push variation to structured input (CSV flags, mapping tables), not inline conditional logic.
@@ -922,9 +935,38 @@ function Invoke-MsaEntraOnboardingFromCsv {
   # ===== PHASE 2: Teams chat group additions =====
   if ($chatQueue.Count -gt 0) {
     if ($newUsersCreated) {
+      # Wait for all newly created users to propagate through Entra before adding to Teams chats
       Write-Host ''
-      Write-Host "Waiting 15 seconds for Entra propagation before Teams chat additions..." -ForegroundColor Cyan
-      Start-Sleep -Seconds 15
+      Write-Host '===== WAITING FOR ENTRA PROPAGATION =====' -ForegroundColor Cyan
+      $maxAttempts = 5
+      $delaySeconds = 30
+      $allReady = $false
+
+      for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        Write-Host "  Attempt $attempt/$maxAttempts - waiting $delaySeconds seconds..." -ForegroundColor Cyan
+        Start-Sleep -Seconds $delaySeconds
+
+        $notReady = @()
+        foreach ($cu in $chatQueue) {
+          $check = Get-MgUser -UserId $cu.UserId -ErrorAction SilentlyContinue
+          if (-not $check) {
+            $notReady += $cu.DisplayName
+          }
+        }
+
+        if ($notReady.Count -eq 0) {
+          Write-Host "  All $($chatQueue.Count) user(s) confirmed in Entra." -ForegroundColor Green
+          $allReady = $true
+          break
+        } else {
+          Write-Host "  Still waiting on $($notReady.Count) user(s): $($notReady -join ', ')" -ForegroundColor Yellow
+        }
+      }
+
+      if (-not $allReady) {
+        Write-Warning "Some users did not propagate after $maxAttempts attempts ($($maxAttempts * $delaySeconds) seconds). Proceeding anyway — some chat additions may fail. Re-run the script to retry."
+      }
+      Write-Host '=========================================' -ForegroundColor Cyan
     }
 
     Write-Host ''
