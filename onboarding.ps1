@@ -793,6 +793,12 @@ function Invoke-MsaEntraOnboardingFromCsv {
       $existing = Get-ExistingUserByUpnOrMail -Upn $upn -PersonalEmail $personalEmail
       if ($existing) {
         Write-Host "SkipExisting: user already exists: $displayName ($($existing.UserPrincipalName))" -ForegroundColor Yellow
+
+        # Still ensure Teams chat membership for existing users
+        $campusKey = $campus.Trim().ToLower()
+        Write-Host "  Checking Teams chat group membership..." -ForegroundColor DarkGray
+        Add-UserToTeamsChats -UserId $existing.Id -DisplayName $displayName -CampusKey $campusKey -JobTitle $jobTitle
+
         continue
       }
     }
@@ -877,6 +883,9 @@ function Invoke-MsaEntraOnboardingFromCsv {
       }
 
       # Add to Teams chat groups (fire-and-forget for new users)
+      # Brief delay to allow Entra to propagate the new user to Teams
+      Write-Host "  Waiting for Entra propagation before Teams chat additions..." -ForegroundColor DarkGray
+      Start-Sleep -Seconds 10
       $campusKey = $campus.Trim().ToLower()
       Write-Host "  Adding to Teams chat groups..." -ForegroundColor DarkGray
       Add-UserToTeamsChats -UserId $user.Id -DisplayName $displayName -CampusKey $campusKey -JobTitle $jobTitle
