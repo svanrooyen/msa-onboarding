@@ -462,30 +462,23 @@ function Normalise-MobileNumber {
 
   if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
 
-  # Strip everything except digits and leading +
-  $cleaned = $Value.Trim()
-  $hasPlus = $cleaned.StartsWith('+')
-  $digitsOnly = $cleaned -replace '[^\d]', ''
+  $digitsOnly = ($Value.Trim() -replace '[^\d]', '')
 
   if ([string]::IsNullOrWhiteSpace($digitsOnly)) { return '' }
 
-  # Australian mobile: convert 04xx to +614xx
-  if ($digitsOnly.StartsWith('04') -and $digitsOnly.Length -eq 10) {
-    return '+61' + $digitsOnly.Substring(1)
+  # Normalise to 10-digit local format starting with 04
+  if ($digitsOnly.Length -eq 11 -and $digitsOnly.StartsWith('614')) {
+    $digitsOnly = '0' + $digitsOnly.Substring(2)   # +61412... -> 0412...
+  } elseif ($digitsOnly.Length -eq 9 -and $digitsOnly.StartsWith('4')) {
+    $digitsOnly = '0' + $digitsOnly                 # 412...   -> 0412...
   }
 
-  # Already international format with leading +
-  if ($hasPlus) {
-    return '+' + $digitsOnly
+  # Format as 0XXX XXX XXX (4-3-3 spacing)
+  if ($digitsOnly.Length -eq 10 -and $digitsOnly.StartsWith('04')) {
+    return $digitsOnly.Substring(0,4) + ' ' + $digitsOnly.Substring(4,3) + ' ' + $digitsOnly.Substring(7,3)
   }
 
-  # Already starts with 61 (no plus) - assume AU international
-  if ($digitsOnly.StartsWith('614') -and $digitsOnly.Length -eq 11) {
-    return '+' + $digitsOnly
-  }
-
-  # Return cleaned digits as-is if we can't determine format
-  Write-Warning "Mobile number '$Value' could not be normalised to E.164 format. Storing as-is."
+  Write-Warning "Mobile number '$Value' could not be normalised to 0XXX XXX XXX format. Storing as-is."
   return $digitsOnly
 }
 
