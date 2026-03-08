@@ -16,13 +16,6 @@ FUTURE ROADMAP (Tracked Enhancements)
 The following items are intentionally NOT implemented yet, but planned.
 This section acts as a living backlog to prevent logic creep inside the core script.
 
-** NEXT) CC State-Based Recruitment Mailbox on Onboarding Emails
-   - Add the relevant recruitment shared mailbox to the CC field of onboarding emails.
-   - Recruitment mailbox is per-state (e.g. QLD, VIC, NSW, TAS each have their own).
-   - Add a RecruitmentMailboxByState config block mapping state -> email address.
-   - Apply to both HTML file output (as a note/header) and Outlook draft CC field.
-   - Work UPN is already CC'd; recruitment mailbox would be an additional CC.
-
 0) Personal Email Capture in Entra (Privacy Review Required)
    - Evaluate storing personal email in user.otherMails.
    - Confirm organisational stance on privacy and visibility.
@@ -154,6 +147,14 @@ $Script:Config = [ordered]@{
   # Sender details for onboarding emails (change to your own name before running)
   SenderName  = 'Steve'
   SenderTitle = 'IT Technical Officer'
+
+  # State-based HR Recruitment shared mailboxes (CC'd on onboarding emails)
+  RecruitmentMailboxByState = @{
+    QLD = 'recruitment@msa.qld.edu.au'
+    NSW = 'recruitment@msa.nsw.edu.au'
+    TAS = 'recruitment@msa.tas.edu.au'
+    VIC = 'recruitment@msv.vic.edu.au'
+  }
 
   # TODO (Roadmap item 7): Structured log file path
   # LogPath = 'C:\Temp\MsaOnboarding.log'
@@ -957,17 +958,22 @@ function Invoke-MsaEntraOnboardingFromCsv {
       $emailBody | Out-File -FilePath $emailPath -Encoding UTF8
       Write-Host "  Email draft saved: $emailPath" -ForegroundColor DarkGray
 
+      # Build CC list: work email + state recruitment mailbox
+      $ccList = @(@{ EmailAddress = @{ Address = $upn } })
+      if ($Script:Config.RecruitmentMailboxByState.ContainsKey($campusState)) {
+        $ccList += @{ EmailAddress = @{ Address = $Script:Config.RecruitmentMailboxByState[$campusState] } }
+      }
+
       # Add primary onboarding email to Outlook Drafts via Graph
       if ($AddToDrafts -and -not [string]::IsNullOrWhiteSpace($personalEmail)) {
         try {
           $toRecipients = @(@{ EmailAddress = @{ Address = $personalEmail } })
-          $ccRecipients = @(@{ EmailAddress = @{ Address = $upn } })
           New-MgUserMessage -UserId $Script:CurrentUserUpn `
             -Subject $emailSubject `
             -Body @{ ContentType = 'HTML'; Content = $emailBody } `
             -ToRecipients $toRecipients `
-            -CcRecipients $ccRecipients | Out-Null
-          Write-Host "  Outlook draft created: $emailSubject -> $personalEmail (CC: $upn)" -ForegroundColor DarkGray
+            -CcRecipients $ccList | Out-Null
+          Write-Host "  Outlook draft created: $emailSubject -> $personalEmail (CC: $upn, recruitment)" -ForegroundColor DarkGray
         } catch {
           Write-Warning "Could not create Outlook draft for $displayName : $($_.Exception.Message)"
         }
@@ -985,12 +991,12 @@ function Invoke-MsaEntraOnboardingFromCsv {
         if ($AddToDrafts -and -not [string]::IsNullOrWhiteSpace($personalEmail)) {
           try {
             $toRecipients = @(@{ EmailAddress = @{ Address = $personalEmail } })
-            $ccRecipients = @(@{ EmailAddress = @{ Address = $upn } })
+            $trainingCc = @(@{ EmailAddress = @{ Address = $upn } })
             New-MgUserMessage -UserId $Script:CurrentUserUpn `
               -Subject $trainingSubject `
               -Body @{ ContentType = 'HTML'; Content = $trainingBody } `
               -ToRecipients $toRecipients `
-              -CcRecipients $ccRecipients | Out-Null
+              -CcRecipients $trainingCc | Out-Null
             Write-Host "  Outlook draft created: $trainingSubject -> $personalEmail (CC: $upn)" -ForegroundColor DarkGray
           } catch {
             Write-Warning "Could not create VIC training Outlook draft for $displayName : $($_.Exception.Message)"
