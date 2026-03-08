@@ -509,6 +509,9 @@ function Invoke-MsaEntraOnboardingFromCsv {
   $chatQueue = New-Object System.Collections.Generic.List[object]
   $newUsersCreated = $false
 
+  # Collect Compass import data per campus (written as CSV at end of run)
+  $compassData = @{}
+
   # ===== PHASE 1: User creation, licence, groups, email =====
   foreach ($r in $rows) {
     $campus  = $r.Campus
@@ -699,6 +702,30 @@ function Invoke-MsaEntraOnboardingFromCsv {
         }
       }
 
+      # Collect Compass import data for this user
+      $campusKey = $campus.Trim().ToLower()
+      $compassRole = if ($Script:Config.CompassBaseRoleMap.ContainsKey($jobTitle)) {
+        $Script:Config.CompassBaseRoleMap[$jobTitle]
+      } else {
+        $Script:Config.CompassDefaultBaseRole
+      }
+      $homeAddress = @($r.'Street Address', $r.Suburb, $r.State, $r.'Post Code') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+      $compassEntry = [pscustomobject]@{
+        firstName   = $firstName
+        lastName    = $surname
+        dateOfBirth = $r.'Date of Birth'
+        gender      = $r.Gender
+        mobileNumber = $mobile
+        email       = $personalEmail
+        schoolEmail = $upn
+        address     = ($homeAddress -join ', ')
+        baseRole    = $compassRole
+      }
+      if (-not $compassData.ContainsKey($campusKey)) {
+        $compassData[$campusKey] = New-Object System.Collections.Generic.List[object]
+      }
+      $compassData[$campusKey].Add($compassEntry)
+
       Write-Host "Created: $displayName ($upn)" -ForegroundColor Green
 
     } else {
@@ -768,6 +795,23 @@ function Invoke-MsaEntraOnboardingFromCsv {
     Write-Host 'These users will need licences assigned manually in the M365 admin centre.' -ForegroundColor Red
     Write-Host '========================================' -ForegroundColor Red
   }
+
+  # ===== PHASE 3: Compass import CSV generation =====
+  if ($compassData.Count -gt 0) {
+    $emailDir = $Script:Config.OnboardingEmailOutputDir
+    if (-not (Test-Path $emailDir)) {
+      New-Item -Path $emailDir -ItemType Directory -Force | Out-Null
+    }
+
+    Write-Host ''
+    Write-Host '===== COMPASS IMPORT FILES =====' -ForegroundColor Cyan
+    foreach ($campus in $compassData.Keys) {
+      $compassPath = Join-Path $emailDir "CompassImport-$campus.csv"
+      $compassData[$campus] | Export-Csv -Path $compassPath -NoTypeInformation -Encoding UTF8
+      Write-Host "  $($compassData[$campus].Count) user(s) -> $compassPath" -ForegroundColor DarkGray
+    }
+    Write-Host '=================================' -ForegroundColor Cyan
+  }
 }
 
 # =========================
@@ -783,12 +827,13 @@ function Invoke-MsaEntraOnboardingFromCsv {
    ├── onboarding.ps1
    ├── onboarding.csv
    └── config\
-       ├── tenant.ps1
-       ├── licences.ps1
-       ├── groups.ps1
-       ├── teams-chat-map.ps1
        ├── campus-defaults.ps1
-       └── email-templates.ps1
+       ├── compass.ps1
+       ├── email-templates.ps1
+       ├── groups.ps1
+       ├── licences.ps1
+       ├── teams-chat-map.ps1
+       └── tenant.ps1
 
 2) Dot-source to load functions and config into session:
    cd C:\path\to\msa-onboarding

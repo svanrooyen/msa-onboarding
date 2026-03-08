@@ -16,10 +16,11 @@ $Script:Config.SenderTitle = 'IT Technical Officer'
 
 # State-based HR Recruitment shared mailboxes (CC'd on onboarding emails)
 $Script:Config.RecruitmentMailboxByState = @{
-  QLD = 'recruitment@msa.qld.edu.au'
-  NSW = 'recruitment@msa.nsw.edu.au'
-  TAS = 'recruitment@msa.tas.edu.au'
-  VIC = 'recruitment@msv.vic.edu.au'
+  QLD  = 'recruitment@msa.qld.edu.au'
+  NSW  = 'recruitment@msa.nsw.edu.au'
+  TAS  = 'recruitment@msa.tas.edu.au'
+  VIC  = 'recruitment@msv.vic.edu.au'
+  TEST = 'recruitment@msa.qld.edu.au'  # Uses QLD recruitment for demo/testing
 }
 
 # TODO (Roadmap item 7): Structured log file path
