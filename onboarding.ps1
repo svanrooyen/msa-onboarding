@@ -794,7 +794,7 @@ function Invoke-MsaEntraOnboardingFromCsv {
    cd C:\path\to\msa-onboarding
    . .\onboarding.ps1
 
-3) Connect once per session:
+3) Connect once per session (yes, MsaGraph, not Connect-MgGraph - this sets up cached domains and current user context for the script's logic):
    Connect-MsaGraph
 
 4) Dry run:
