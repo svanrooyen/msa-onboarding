@@ -1,0 +1,9 @@
+# Output files (contain credentials in email drafts and HTML templates)
+outputs/
+
+# CSV files (may contain personal information)
+*.csv
+
+# PowerShell temp files
+*.ps1.bak
+*.tmp
