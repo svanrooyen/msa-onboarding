@@ -4,7 +4,6 @@
 # Domains, UPN mode, sender details, recruitment mailboxes.
 # Future: migrate to SharePoint List or Azure App Configuration.
 
-$Script:Config.TenantDomain   = 'msa.qld.edu.au'
 $Script:Config.UsageLocation  = 'AU'
 
 # Output directory for per-user onboarding email HTML files

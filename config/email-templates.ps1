@@ -165,7 +165,7 @@ function New-MsvMandatoryTrainingEmailBody {
 <li>Complete all sections and quizzes within the module. Please note, you must click on everything within each module for it to register as complete. Skipping through doesn't work.</li>
 <li>You'll then have an assessment to complete when you return to the information page under <strong>Assessment</strong></li>
 <li>Once complete, follow the step that will take you back to the course information page where you can download a copy of your certificate</li>
-<li>Save as PDF, <strong>change file name to &lt;FULL NAME Protecting Children Certificate 2025&gt;</strong></li>
+<li>Save as PDF, <strong>change file name to &lt;FULL NAME Protecting Children Certificate $(Get-Date -Format 'yyyy')&gt;</strong></li>
 <li>Send this to <a href="mailto:bundoora@msv.vic.edu.au">bundoora@msv.vic.edu.au</a> for record keeping</li>
 </ol>
 
@@ -179,7 +179,7 @@ function New-MsvMandatoryTrainingEmailBody {
 <li>On the information page, under the <strong>eLearn Modules</strong> section, there will be <strong>4 modules</strong> for you to complete. Click on Module 1 to start and follow the instructions within. Please note, you must click on everything within each module for it to register as complete. Skipping through doesn't work.</li>
 <li>Please complete all 4 modules. There are mini quizzes within each but no end of course assessment.</li>
 <li>Once complete, follow the step that will take you back to the course information page where you can download a copy of your certificate</li>
-<li>Save as PDF, <strong>change file name to &lt;FULL NAME Information Sharing Certificate 2025&gt;</strong></li>
+<li>Save as PDF, <strong>change file name to &lt;FULL NAME Information Sharing Certificate $(Get-Date -Format 'yyyy')&gt;</strong></li>
 <li>Send this to <a href="mailto:bundoora@msv.vic.edu.au">bundoora@msv.vic.edu.au</a> for record keeping</li>
 </ol>
 

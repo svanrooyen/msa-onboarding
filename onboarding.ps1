@@ -1,6 +1,6 @@
 <#
 MSA Entra Onboarding - Chunked PowerShell
-Version: 0.15.0
+Version: 0.17.0
 
 GOAL
 - Manual-run onboarding from CSV export of MS Form spreadsheet.
@@ -13,6 +13,18 @@ NOTES
 - Config is split into separate files in the .\config\ subfolder for maintainability.
 
 CHANGELOG
+- 0.17.0: Cross-domain UPN uniqueness — Get-UniqueUpn now checks mailNickname across all
+           domains (not just the target domain) to prevent duplicate prefixes like
+           terry.t@msa.qld.edu.au and terry.t@msv.vic.edu.au. SkipExisting check reordered
+           to run before UPN generation (fixes false-negative match when same-name user already
+           exists). Replaced Get-ExistingUserByUpnOrMail with Find-ExistingUser (matches on
+           otherMails then mailNickname prefix). Added runtime warning when Teams chat map
+           appears to use a test override. Replaced hardcoded year in VIC training email
+           template with Get-Date. Removed unused TenantDomain config value from tenant.ps1.
+- 0.16.0: Replaced separate campus group + role group assignment with composite RoleCampusToGroupKey
+           lookup (e.g. "Assistant Teacher|beenleigh" -> AT_BEENLEIGH). Removes dependency on
+           CampusToGroupKey and JobTitleToRoleGroupKey config sections. Matches updated groups.ps1
+           which now uses per-campus role groups (mail-enabled security groups).
 - 0.15.0: Split config into separate files in .\config\ subfolder (tenant, licences, groups,
            teams-chat-map, campus-defaults, email-templates). Main script now loads config via
            dot-sourcing. No functional changes.
@@ -222,39 +234,54 @@ function Get-UniqueUpn {
 
   # MSA naming convention: firstname.{progressive surname letters}
   # e.g. steven.v -> steven.ve -> steven.vel -> steven.vell -> steven.vella
+  # Cross-domain uniqueness: checks mailNickname (= UPN prefix) so that e.g.
+  # terry.t@msa.qld.edu.au blocks terry.t@msv.vic.edu.au. This keeps UPN
+  # prefixes unique across all state domains — confirmed policy with Damon.
   for ($i = 1; $i -le $sn.Length; $i++) {
     $suffix = $sn.Substring(0, $i)
-    $upn = "$fn.$suffix@$TenantDomain"
-    $existing = Get-MgUser -Filter "userPrincipalName eq '$upn'" -ErrorAction SilentlyContinue
+    $nickname = "$fn.$suffix"
+    $existing = Get-MgUser -Filter "mailNickname eq '$nickname'" -ErrorAction SilentlyContinue
     if (-not $existing) {
+      $upn = "$nickname@$TenantDomain"
       Write-Host "  UPN available: $upn" -ForegroundColor DarkGray
       return $upn
     }
-    Write-Host "  UPN taken: $upn - trying next suffix" -ForegroundColor DarkGray
+    Write-Host "  UPN prefix taken: $nickname - trying next suffix" -ForegroundColor DarkGray
   }
 
   # Safety valve: full surname exhausted, flag for manual intervention
-  throw "Could not generate unique UPN for $FirstName $Surname — all surname suffix combinations taken at domain $TenantDomain. Manual intervention required."
+  throw "Could not generate unique UPN for $FirstName $Surname — all surname suffix combinations taken. Manual intervention required."
 }
 
-function Get-ExistingUserByUpnOrMail {
+function Find-ExistingUser {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][string]$Upn,
+    [Parameter(Mandatory)][string]$FirstName,
+    [Parameter(Mandatory)][string]$Surname,
     [string]$PersonalEmail
   )
 
-  # Fast path: check UPN
-  $u = Get-MgUser -Filter "userPrincipalName eq '$Upn'" -ErrorAction SilentlyContinue
-  if ($u) { return $u }
-
-  # Optional: if your org stores personal email in an attribute, we can query it.
-  # NOTE: In your current screenshot, personal email is collected by the form but not necessarily stored in Entra.
-  # If you decide to store it (e.g. in 'otherMails'), we can use it for matching.
+  # Best match: personal email stored in otherMails (set during onboarding)
   if (-not [string]::IsNullOrWhiteSpace($PersonalEmail)) {
     $mail = $PersonalEmail.Replace("'","''")
-    $u2 = Get-MgUser -Filter "otherMails/any(x:x eq '$mail')" -ErrorAction SilentlyContinue
-    if ($u2) { return $u2 }
+    $u = Get-MgUser -Filter "otherMails/any(x:x eq '$mail')" -ErrorAction SilentlyContinue
+    if ($u) { return $u }
+  }
+
+  # Fallback: match on mailNickname prefix pattern (firstname.surnameprefix)
+  # This catches users created by this script even if personal email wasn't stored.
+  $fn = (Normalise-NamePart $FirstName).ToLowerInvariant()
+  $snRaw = $Surname.Trim()
+  if ($snRaw -match '-') { $snRaw = ($snRaw -split '-')[0] }
+  $snFirst = (($snRaw -replace "[^a-zA-Z0-9]", '') -split '')[1]  # first letter
+  if ($fn -and $snFirst) {
+    $prefix = "$fn.$($snFirst.ToLowerInvariant())"
+    $matches = Get-MgUser -Filter "startsWith(mailNickname, '$prefix')" -ErrorAction SilentlyContinue
+    if ($matches) {
+      # If multiple matches, return the first — caller will log the UPN for visibility
+      if ($matches -is [array]) { return $matches[0] }
+      return $matches
+    }
   }
 
   return $null
@@ -414,6 +441,13 @@ function Invoke-MsaEntraOnboardingFromCsv {
 
   if (-not (Test-Path $CsvPath)) { throw "CSV not found: $CsvPath" }
 
+  # Warn if Teams chat map appears to be using a test override (all chats point to same ID)
+  if ($Script:Config.TeamsChatMap.Count -gt 1) {
+    $allChatIds = $Script:Config.TeamsChatMap.Values | ForEach-Object { $_.KeyMessages } | Select-Object -Unique
+    if ($allChatIds.Count -eq 1) {
+      Write-Warning "TEAMS CHAT MAP: All campuses routed to a single chat ID — likely test override. Check config/teams-chat-map.ps1 if this is a production run."
+    }
+  }
   $rows = Import-Csv -Path $CsvPath
   if (-not $rows -or $rows.Count -eq 0) { throw 'No rows found in CSV.' }
 
@@ -437,14 +471,13 @@ function Invoke-MsaEntraOnboardingFromCsv {
 
     if ([string]::IsNullOrWhiteSpace($campus)) { throw 'Campus is required.' }
 
-    $c = Resolve-CampusDefaults -Campus $campus
-
-    $tenantDomain = Resolve-UpnDomain -CampusDefaults $c
-    $upn = Get-UniqueUpn -FirstName $firstName -Surname $surname -TenantDomain $tenantDomain
     $displayName = "$firstName $surname".Trim()
 
+    # SkipExisting check BEFORE UPN generation — avoids unnecessary Graph calls
+    # and prevents false-negative matches when a same-name user already exists
+    # (Get-UniqueUpn would return a different suffix, missing the existing user).
     if ($SkipExisting) {
-      $existing = Get-ExistingUserByUpnOrMail -Upn $upn -PersonalEmail $personalEmail
+      $existing = Find-ExistingUser -FirstName $firstName -Surname $surname -PersonalEmail $personalEmail
       if ($existing) {
         Write-Host "SkipExisting: user already exists: $displayName ($($existing.UserPrincipalName))" -ForegroundColor Yellow
 
@@ -459,6 +492,10 @@ function Invoke-MsaEntraOnboardingFromCsv {
         continue
       }
     }
+
+    $c = Resolve-CampusDefaults -Campus $campus
+    $tenantDomain = Resolve-UpnDomain -CampusDefaults $c
+    $upn = Get-UniqueUpn -FirstName $firstName -Surname $surname -TenantDomain $tenantDomain
 
     $password = New-SecurePassword
 
@@ -522,21 +559,17 @@ function Invoke-MsaEntraOnboardingFromCsv {
         Write-Warning "Licence SKU not set for '$skuKey'. Skipping licence assignment."
       }
 
-      # Add campus group
+      # Add role+campus group (e.g. "Assistant Teacher|beenleigh" -> AT_BEENLEIGH)
       $campusKey = $campus.Trim().ToLower()
-      if ($Script:Config.CampusToGroupKey.Contains($campusKey)) {
-        $gKey = $Script:Config.CampusToGroupKey[$campusKey]
+      $roleCampusKey = "$jobTitle|$campusKey"
+      if ($Script:Config.RoleCampusToGroupKey.Contains($roleCampusKey)) {
+        $gKey = $Script:Config.RoleCampusToGroupKey[$roleCampusKey]
         if ($Script:Config.Groups.Contains($gKey)) {
           Add-UserToGroupIfConfigured -UserId $user.Id -GroupId $Script:Config.Groups[$gKey]
+          Write-Host "  Added to group: $gKey" -ForegroundColor DarkGray
         }
-      }
-
-      # Add role group
-      if ($Script:Config.JobTitleToRoleGroupKey.Contains($jobTitle)) {
-        $roleKey = $Script:Config.JobTitleToRoleGroupKey[$jobTitle]
-        if ($Script:Config.Groups.Contains($roleKey)) {
-          Add-UserToGroupIfConfigured -UserId $user.Id -GroupId $Script:Config.Groups[$roleKey]
-        }
+      } else {
+        Write-Host "  No role+campus group mapping for '$roleCampusKey' — skipping group assignment." -ForegroundColor DarkGray
       }
 
       # Queue for Phase 2 chat additions

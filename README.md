@@ -15,7 +15,7 @@ The script processes a CSV of new starters and, for each row:
 3. **Generates a unique UPN** — uses the MSA naming convention (`firstname.{progressive surname letters}`) and checks Entra for collisions before settling on a UPN
 4. **Creates the Entra user** — sets all profile fields from the CSV and campus defaults; stores personal email in `otherMails`
 5. **Assigns a licence** — assigns the configured default SKU (M365 A3 for production, Business Basic for testing)
-6. **Adds to security groups** — campus baseline group and role group based on job title, both driven by mapping tables in config
+6. **Adds to security groups** — role+campus group (e.g. Assistant Teachers at Beenleigh) based on job title and campus, driven by a composite mapping table in config
 7. **Generates onboarding email HTML** — state-aware template (MSA vs MSV); VIC staff also get a mandatory training email
 8. **Optionally creates Outlook drafts** — via Graph API using `-AddToDrafts`; drafts are addressed to personal email, CC'd to new work email and state recruitment mailbox
 9. **Generates Compass import CSV** — per-campus staff import file for the school management system
@@ -35,7 +35,7 @@ msa-onboarding/
 │   ├── campus-defaults.ps1 # Campus address blocks, phone numbers, state mapping
 │   ├── compass.ps1         # Compass base role mappings
 │   ├── email-templates.ps1 # MSA and MSV onboarding email template functions
-│   ├── groups.ps1          # Security group IDs, campus→group and jobtitle→group mappings
+│   ├── groups.ps1          # Security group IDs (role+campus), composite mapping table
 │   ├── licences.ps1        # Licence SKU IDs and default SKU key
 │   ├── teams-chat-map.ps1  # Teams chat thread IDs by campus; support worker titles
 │   └── tenant.ps1          # Tenant domain, UPN mode, sender details, recruitment mailboxes
@@ -78,7 +78,7 @@ Invoke-MsaEntraOnboardingFromCsv -SkipExisting
 Invoke-MsaEntraOnboardingFromCsv -SkipExisting -AddToDrafts
 ```
 
-**Testing against a personal tenant:** Set `UpnDomainMode = 'Fixed'` and configure `FixedTenantDomain` in `config/tenant.ps1`. Set `DefaultLicenceSkuKey = 'M365_BUSINESS_BASIC'` in `config/licences.ps1`. Use campus `test` in the CSV.
+**Testing against a personal tenant:** Set `UpnDomainMode = 'Fixed'` and configure `FixedTenantDomain` in `config/tenant.ps1`. Uncomment `M365_BUSINESS_BASIC` in `config/licences.ps1` and set it as `DefaultLicenceSkuKey`. Use campus `test` in the CSV.
 
 ---
 
@@ -97,18 +97,17 @@ Invoke-MsaEntraOnboardingFromCsv -SkipExisting -AddToDrafts
 ### `licences.ps1`
 | Key | Purpose |
 |-----|---------|
-| `DefaultLicenceSkuKey` | Key into `Sku` table — which licence to assign |
-| `Sku` | SKU name → GUID mapping. Get from: `Get-MgSubscribedSku \| Select SkuPartNumber,SkuId` |
+| `DefaultLicenceSkuKey` | Key into `Sku` table — which licence to assign. Default: `M365EDU_A3_FACULTY` |
+| `Sku` | All tenant SKU part names → GUID mappings. Refresh from: `Get-MgSubscribedSku \| Select SkuPartNumber,SkuId` |
 
 ### `groups.ps1`
-Group GUIDs are in `Groups`. Get them from: `Get-MgGroup -Filter "displayName eq 'GroupName'" | Select Id`
+Group GUIDs are in `Groups`, keyed as `AT_CAMPUS` / `SW_CAMPUS` (e.g. `AT_BEENLEIGH`, `SW_CAIRNS`). Groups are mail-enabled security groups. Get IDs from: `Get-MgGroup -Filter "displayName eq 'GroupName'" | Select Id`
 
-Mappings:
-- `CampusToGroupKey` — normalised campus name → group key
-- `JobTitleToRoleGroupKey` — job title string → group key
+Mapping:
+- `RoleCampusToGroupKey` — composite `"JobTitle|campus"` key → group key (e.g. `"Assistant Teacher|beenleigh"` → `AT_BEENLEIGH`). The script builds the lookup key from the CSV row. Job title + campus combos not in the map are skipped gracefully.
 
 ### `campus-defaults.ps1`
-Each campus key (lowercase) maps to a hashtable of address/contact/state fields. These populate the Entra user profile on creation and replace the need for M365 admin portal templates.
+Each campus key (lowercase) maps to a hashtable of address/contact/state fields. These populate the Entra user profile on creation and replace the need for M365 admin portal templates. `Office` is intentionally left blank per M365 admin template convention — only `Department` is populated with the campus name.
 
 ### `teams-chat-map.ps1`
 Chat thread IDs keyed by campus. Keyed by campus name from the CSV, not the Entra `City` field. `SupportWorkerTitles` controls which job titles get added to support worker chats.
@@ -156,7 +155,8 @@ Intentionally not yet implemented. Items here should be built as separate PRs, n
 | 6 | Role-based licence mapping | Replace single default SKU with job-title-driven mapping table |
 | 7 | Structured logging | File-based log with INFO/WARN/ERROR levels; `Start-Transcript` as quick win |
 | 8 | **CSV input validation** ← **next priority** | Fail-fast validation before any Graph calls; per-row pass/fail summary |
-| 9 | Cross-domain UPN uniqueness | Confirm with Damon whether duplicate prefixes across state domains are acceptable; update `Get-UniqueUpn` accordingly |
+| 9 | ~~Cross-domain UPN uniqueness~~ | ✅ Done — `Get-UniqueUpn` now checks `mailNickname` across all domains |
+| 10 | Replace temp passwords with Temporary Access Pass (TAP) | Current flow embeds a plaintext temp password in the onboarding email HTML and Outlook draft. Works, but the password is visible to anyone with access to the `outputs/` folder or the sending mailbox drafts. HR also receives the password via the CC'd onboarding email — arguably unnecessary since HR is notified when the FreshWorks ticket is closed. TAP would be more secure and time-limited. |
 
 ---
 

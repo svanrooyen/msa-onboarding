@@ -5,6 +5,33 @@
 # Keyed by campus name from CSV, NOT Entra City field.
 # Future: migrate to SharePoint List.
 
+# ── PROD TEST OVERRIDE ────────────────────────────────────────────────
+# Temporarily routes ALL campuses and chat types to a single test group
+# so prod testing doesn't spam real campus chats.
+# To revert: comment out this block and uncomment the real map below.
+$prodTestChatId = '19:56dfb06d3ccb4a51b55bbe6333ef66e8@thread.v2'
+
+$Script:Config.TeamsChatMap = @{
+  beenleigh   = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  bundoora    = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  cairns      = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  coolangatta = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  launceston  = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  mitchelton  = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  olympicpark = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  southport   = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  springfield = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  varsity     = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  test        = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+}
+
+$Script:Config.TeamsChatCrossCampus = @{
+  SupportWorkers = $prodTestChatId
+}
+# ── END PROD TEST OVERRIDE ────────────────────────────────────────────
+
+<#
+# ── REAL CAMPUS CHAT MAP (uncomment when done testing) ────────────────
 $Script:Config.TeamsChatMap = @{
   beenleigh = @{
     KeyMessages        = '19:322e7c475eb541eaae21328de4fe474e@thread.v2'
@@ -56,7 +83,6 @@ $Script:Config.TeamsChatMap = @{
     StudentSupport     = '19:4dcb5a2564c344e086725c693db9ef27@thread.v2'
     SupportWorkerChat  = '19:b18bf8a872d74b4aba96e0d2c587e4d7@thread.v2'
   }
-  # Test campus - uses a single chat for all rules (personal tenant testing)
   test = @{
     KeyMessages        = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'
     StudentSupport     = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'
@@ -64,10 +90,11 @@ $Script:Config.TeamsChatMap = @{
   }
 }
 
-# Cross-campus Teams chat groups
 $Script:Config.TeamsChatCrossCampus = @{
   SupportWorkers = '19:d8d84084e7fc4eea9326d88a2cc8a831@thread.v2'
 }
+# ── END REAL CAMPUS CHAT MAP ──────────────────────────────────────────
+#>
 
 # Job titles that qualify for Support Worker chat groups
 $Script:Config.SupportWorkerTitles = @('Support Worker')
