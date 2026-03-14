@@ -443,7 +443,7 @@ function Invoke-MsaEntraOnboardingFromCsv {
 
   # Warn if Teams chat map appears to be using a test override (all chats point to same ID)
   if ($Script:Config.TeamsChatMap.Count -gt 1) {
-    $allChatIds = $Script:Config.TeamsChatMap.Values | ForEach-Object { $_.KeyMessages } | Select-Object -Unique
+    $allChatIds = @($Script:Config.TeamsChatMap.Values | ForEach-Object { $_.KeyMessages } | Select-Object -Unique)
     if ($allChatIds.Count -eq 1) {
       Write-Warning "TEAMS CHAT MAP: All campuses routed to a single chat ID — likely test override. Check config/teams-chat-map.ps1 if this is a production run."
     }
