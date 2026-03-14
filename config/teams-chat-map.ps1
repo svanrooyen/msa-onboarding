@@ -9,7 +9,8 @@
 # Temporarily routes ALL campuses and chat types to a single test group
 # so prod testing doesn't spam real campus chats.
 # To revert: comment out this block and uncomment the real map below.
-$prodTestChatId = '19:56dfb06d3ccb4a51b55bbe6333ef66e8@thread.v2'
+$prodTestChatId = '19:56dfb06d3ccb4a51b55bbe6333ef66e8@thread.v2'          # MSA prod test chat
+$sslvrTestChatId = '19:0b4e46a8890e43ea869573cc72fe50a0@thread.v2'         # Personal tenant test chat
 
 $Script:Config.TeamsChatMap = @{
   beenleigh   = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
@@ -22,7 +23,7 @@ $Script:Config.TeamsChatMap = @{
   southport   = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
   springfield = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
   varsity     = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
-  test        = @{ KeyMessages = $prodTestChatId; StudentSupport = $prodTestChatId; SupportWorkerChat = $prodTestChatId }
+  test        = @{ KeyMessages = $sslvrTestChatId; StudentSupport = $sslvrTestChatId; SupportWorkerChat = $sslvrTestChatId }
 }
 
 $Script:Config.TeamsChatCrossCampus = @{

@@ -15,12 +15,11 @@ NOTES
 CHANGELOG
 - 0.17.0: Cross-domain UPN uniqueness — Get-UniqueUpn now checks mailNickname across all
            domains (not just the target domain) to prevent duplicate prefixes like
-           terry.t@msa.qld.edu.au and terry.t@msv.vic.edu.au. SkipExisting check reordered
-           to run before UPN generation (fixes false-negative match when same-name user already
-           exists). Replaced Get-ExistingUserByUpnOrMail with Find-ExistingUser (matches on
-           otherMails then mailNickname prefix). Added runtime warning when Teams chat map
-           appears to use a test override. Replaced hardcoded year in VIC training email
-           template with Get-Date. Removed unused TenantDomain config value from tenant.ps1.
+           terry.t@msa.qld.edu.au and terry.t@msv.vic.edu.au. Added runtime warning when
+           Teams chat map appears to use a test override. Replaced hardcoded year in VIC
+           training email template with Get-Date. Removed unused TenantDomain config value
+           from tenant.ps1. SkipExisting logic unchanged (known same-batch timing edge case
+           documented in backlog).
 - 0.16.0: Replaced separate campus group + role group assignment with composite RoleCampusToGroupKey
            lookup (e.g. "Assistant Teacher|beenleigh" -> AT_BEENLEIGH). Removes dependency on
            CampusToGroupKey and JobTitleToRoleGroupKey config sections. Matches updated groups.ps1
@@ -253,35 +252,22 @@ function Get-UniqueUpn {
   throw "Could not generate unique UPN for $FirstName $Surname — all surname suffix combinations taken. Manual intervention required."
 }
 
-function Find-ExistingUser {
+function Get-ExistingUserByUpnOrMail {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][string]$FirstName,
-    [Parameter(Mandatory)][string]$Surname,
+    [Parameter(Mandatory)][string]$Upn,
     [string]$PersonalEmail
   )
 
-  # Best match: personal email stored in otherMails (set during onboarding)
+  # Fast path: check UPN
+  $u = Get-MgUser -Filter "userPrincipalName eq '$Upn'" -ErrorAction SilentlyContinue
+  if ($u) { return $u }
+
+  # Fallback: check personal email in otherMails (set during onboarding)
   if (-not [string]::IsNullOrWhiteSpace($PersonalEmail)) {
     $mail = $PersonalEmail.Replace("'","''")
-    $u = Get-MgUser -Filter "otherMails/any(x:x eq '$mail')" -ErrorAction SilentlyContinue
-    if ($u) { return $u }
-  }
-
-  # Fallback: match on mailNickname prefix pattern (firstname.surnameprefix)
-  # This catches users created by this script even if personal email wasn't stored.
-  $fn = (Normalise-NamePart $FirstName).ToLowerInvariant()
-  $snRaw = $Surname.Trim()
-  if ($snRaw -match '-') { $snRaw = ($snRaw -split '-')[0] }
-  $snFirst = (($snRaw -replace "[^a-zA-Z0-9]", '') -split '')[1]  # first letter
-  if ($fn -and $snFirst) {
-    $prefix = "$fn.$($snFirst.ToLowerInvariant())"
-    $matches = Get-MgUser -Filter "startsWith(mailNickname, '$prefix')" -ErrorAction SilentlyContinue
-    if ($matches) {
-      # If multiple matches, return the first — caller will log the UPN for visibility
-      if ($matches -is [array]) { return $matches[0] }
-      return $matches
-    }
+    $u2 = Get-MgUser -Filter "otherMails/any(x:x eq '$mail')" -ErrorAction SilentlyContinue
+    if ($u2) { return $u2 }
   }
 
   return $null
@@ -471,13 +457,14 @@ function Invoke-MsaEntraOnboardingFromCsv {
 
     if ([string]::IsNullOrWhiteSpace($campus)) { throw 'Campus is required.' }
 
+    $c = Resolve-CampusDefaults -Campus $campus
+
+    $tenantDomain = Resolve-UpnDomain -CampusDefaults $c
+    $upn = Get-UniqueUpn -FirstName $firstName -Surname $surname -TenantDomain $tenantDomain
     $displayName = "$firstName $surname".Trim()
 
-    # SkipExisting check BEFORE UPN generation — avoids unnecessary Graph calls
-    # and prevents false-negative matches when a same-name user already exists
-    # (Get-UniqueUpn would return a different suffix, missing the existing user).
     if ($SkipExisting) {
-      $existing = Find-ExistingUser -FirstName $firstName -Surname $surname -PersonalEmail $personalEmail
+      $existing = Get-ExistingUserByUpnOrMail -Upn $upn -PersonalEmail $personalEmail
       if ($existing) {
         Write-Host "SkipExisting: user already exists: $displayName ($($existing.UserPrincipalName))" -ForegroundColor Yellow
 
@@ -492,10 +479,6 @@ function Invoke-MsaEntraOnboardingFromCsv {
         continue
       }
     }
-
-    $c = Resolve-CampusDefaults -Campus $campus
-    $tenantDomain = Resolve-UpnDomain -CampusDefaults $c
-    $upn = Get-UniqueUpn -FirstName $firstName -Surname $surname -TenantDomain $tenantDomain
 
     $password = New-SecurePassword
 
